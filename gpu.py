@@ -46,7 +46,7 @@ class TriangleRender(Elaboratable):
                 
             with m.State("SETUP"):
                 def edge(ax, ay, bx, by, cx, cy): # ax, ay, bx, by, cx, cy all Q12.4
-                    return (((cx - ax) * (by - ay)) - ((cy - ay) * (bx - ax))) >> 4 # Q24.4
+                    return (((cx - ax).as_signed() * (by - ay).as_signed()) - ((cy - ay).as_signed() * (bx - ax).as_signed())) >> 4 # Q24.4
                 m.d.sync += [
                     edge_ab_dx.eq(b_x - a_x),
                     edge_ab_dy.eq(b_y - a_y),
@@ -90,7 +90,7 @@ class TriangleRender(Elaboratable):
                     edge_ca.eq(edge_ca - edge_ca_dy),
                     x.eq(x - (1 << 4)),
                 ]
-                with m.If(x <= start_x):
+                with m.If((x - (1 << 4)) <= start_x):
                     m.d.sync += [
                         edge_ab.eq(edge_ab - edge_ab_dx - edge_ab_dy),
                         edge_bc.eq(edge_bc - edge_bc_dx - edge_bc_dy),
