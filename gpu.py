@@ -48,14 +48,14 @@ class TriangleRender(Elaboratable):
                 def edge(ax, ay, bx, by, cx, cy): # ax, ay, bx, by, cx, cy all Q12.4
                     return (((cx - ax).as_signed() * (by - ay).as_signed()) - ((cy - ay).as_signed() * (bx - ax).as_signed())) >> 4 # Q24.4
                 m.d.sync += [
-                    edge_ab_dx.eq(b_x - a_x),
-                    edge_ab_dy.eq(b_y - a_y),
+                    edge_ab_dx.eq(b_y - a_y),
+                    edge_ab_dy.eq(a_x - b_x),
                     edge_ab.eq(edge(a_x, a_y, b_x, b_y, x, y)),
-                    edge_bc_dx.eq(c_x - b_x),
-                    edge_bc_dy.eq(c_y - b_y),
+                    edge_bc_dx.eq(c_y - b_y),
+                    edge_bc_dy.eq(b_x - c_x),
                     edge_bc.eq(edge(b_x, b_y, c_x, c_y, x, y)),
-                    edge_ca_dx.eq(a_x - c_x),
-                    edge_ca_dy.eq(a_y - c_y),
+                    edge_ca_dx.eq(a_y - c_y),
+                    edge_ca_dy.eq(c_x - a_x),
                     edge_ca.eq(edge(c_x, c_y, a_x, a_y, x, y)),
                 ]
                 m.next = "FORWARDS"
@@ -63,17 +63,17 @@ class TriangleRender(Elaboratable):
             with m.State("FORWARDS"):
                 m.d.sync += [
                     self.o_xy.eq(Cat(x, y)),
-                    self.o_valid.eq(Cat(edge_ab >= 0, edge_bc >= 0, edge_ca >= 0).all() | Cat(edge_ab <= 0, edge_bc <= 0, edge_ca <= 0).all()),
-                    edge_ab.eq(edge_ab + edge_ab_dy),
-                    edge_bc.eq(edge_bc + edge_bc_dy),
-                    edge_ca.eq(edge_ca + edge_ca_dy),
+                    self.o_valid.eq(Cat(edge_ab <= 0, edge_bc <= 0, edge_ca <= 0).all()),
+                    edge_ab.eq(edge_ab + edge_ab_dx),
+                    edge_bc.eq(edge_bc + edge_bc_dx),
+                    edge_ca.eq(edge_ca + edge_ca_dx),
                     x.eq(x + (1 << 4)),
                 ]
                 with m.If((x + (1 << 4)) > stop_x):
                     m.d.sync += [
-                        edge_ab.eq(edge_ab - edge_ab_dx + edge_ab_dy),
-                        edge_bc.eq(edge_bc - edge_bc_dx + edge_bc_dy),
-                        edge_ca.eq(edge_ca - edge_ca_dx + edge_ca_dy),
+                        edge_ab.eq(edge_ab + edge_ab_dy + edge_ab_dx),
+                        edge_bc.eq(edge_bc + edge_bc_dy + edge_bc_dx),
+                        edge_ca.eq(edge_ca + edge_ca_dy + edge_ca_dx),
                     ]
                     with m.If((y + (1 << 4)) > stop_y):
                         m.next = "DONE"
@@ -84,17 +84,17 @@ class TriangleRender(Elaboratable):
             with m.State("BACKWARDS"):
                 m.d.sync += [
                     self.o_xy.eq(Cat(x, y)),
-                    self.o_valid.eq(Cat(edge_ab >= 0, edge_bc >= 0, edge_ca >= 0).all() | Cat(edge_ab <= 0, edge_bc <= 0, edge_ca <= 0).all()),
-                    edge_ab.eq(edge_ab - edge_ab_dy),
-                    edge_bc.eq(edge_bc - edge_bc_dy),
-                    edge_ca.eq(edge_ca - edge_ca_dy),
+                    self.o_valid.eq(Cat(edge_ab <= 0, edge_bc <= 0, edge_ca <= 0).all()),
+                    edge_ab.eq(edge_ab - edge_ab_dx),
+                    edge_bc.eq(edge_bc - edge_bc_dx),
+                    edge_ca.eq(edge_ca - edge_ca_dx),
                     x.eq(x - (1 << 4)),
                 ]
                 with m.If((x - (1 << 4)) <= start_x):
                     m.d.sync += [
-                        edge_ab.eq(edge_ab - edge_ab_dx - edge_ab_dy),
-                        edge_bc.eq(edge_bc - edge_bc_dx - edge_bc_dy),
-                        edge_ca.eq(edge_ca - edge_ca_dx - edge_ca_dy),
+                        edge_ab.eq(edge_ab + edge_ab_dy - edge_ab_dx),
+                        edge_bc.eq(edge_bc + edge_bc_dy - edge_bc_dx),
+                        edge_ca.eq(edge_ca + edge_ca_dy - edge_ca_dx),
                     ]
                     with m.If((y + (1 << 4)) > stop_y):
                         m.next = "DONE"
@@ -115,8 +115,8 @@ if __name__ == "__main__":
     ports = [tr.i_xy_a, tr.i_xy_b, tr.i_xy_c, tr.o_xy, tr.o_valid]
 
     def test():
-        yield tr.i_xy_a.eq(0x19B61EB6)
-        yield tr.i_xy_b.eq(0x04490949)
+        yield tr.i_xy_b.eq(0x19B61EB6)
+        yield tr.i_xy_a.eq(0x04490949)
         yield tr.i_xy_c.eq(0x19B60949)
         yield
         cycles = 1
