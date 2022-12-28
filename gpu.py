@@ -23,6 +23,7 @@ class TriangleRender(Elaboratable):
         stop_y  = Mux(a_y > b_y, Mux(a_y > c_y, a_y, c_y), Mux(b_y > c_y, b_y, c_y))
         x       = Signal(16)
         y       = Signal(16)
+        x_inc   = Signal(signed(16))
 
         edge_ab_dx = Signal(signed(16))
         edge_ab_dy = Signal(signed(16))
@@ -34,6 +35,11 @@ class TriangleRender(Elaboratable):
         edge_ca_dy = Signal(signed(16))
         edge_ca    = Signal(signed(32))
 
+        m.d.sync += [
+            self.o_xy.eq(Cat(x, y)),
+            self.o_valid.eq(Cat(edge_ab <= 0, edge_bc <= 0, edge_ca <= 0).all()),
+        ]
+
         with m.FSM():
             with m.State("WAIT1"):
                 m.next = "WAIT2"
@@ -41,6 +47,7 @@ class TriangleRender(Elaboratable):
                 m.d.sync += [
                     x.eq(start_x + (1 << 3)),
                     y.eq(start_y + (1 << 3)),
+                    x_inc.eq(1 << 4),
                 ]
                 m.next = "SETUP"
                 
@@ -58,49 +65,28 @@ class TriangleRender(Elaboratable):
                     edge_ca_dy.eq(c_x - a_x),
                     edge_ca.eq(edge(c_x, c_y, a_x, a_y, x, y)),
                 ]
-                m.next = "FORWARDS"
+                m.next = "ITERATE"
 
-            with m.State("FORWARDS"):
+            with m.State("ITERATE"):
                 m.d.sync += [
-                    self.o_xy.eq(Cat(x, y)),
-                    self.o_valid.eq(Cat(edge_ab <= 0, edge_bc <= 0, edge_ca <= 0).all()),
                     edge_ab.eq(edge_ab + edge_ab_dx),
                     edge_bc.eq(edge_bc + edge_bc_dx),
                     edge_ca.eq(edge_ca + edge_ca_dx),
-                    x.eq(x + (1 << 4)),
+                    x.eq(x + x_inc),
                 ]
-                with m.If((x + (1 << 4)) > stop_x):
+                with m.If(((x_inc > 0) & ((x + x_inc) > stop_x)) | ((x_inc < 0) & ((x + x_inc) <= start_x))):
                     m.d.sync += [
                         edge_ab.eq(edge_ab + edge_ab_dy + edge_ab_dx),
                         edge_bc.eq(edge_bc + edge_bc_dy + edge_bc_dx),
                         edge_ca.eq(edge_ca + edge_ca_dy + edge_ca_dx),
+                        edge_ab_dx.eq(-edge_ab_dx),
+                        edge_bc_dx.eq(-edge_bc_dx),
+                        edge_ca_dx.eq(-edge_ca_dx),
+                        x_inc.eq(-x_inc),
+                        y.eq(y + (1 << 4)),
                     ]
                     with m.If((y + (1 << 4)) > stop_y):
                         m.next = "DONE"
-                    with m.Else():
-                        m.d.sync += y.eq(y + (1 << 4))
-                        m.next = "BACKWARDS"
-
-            with m.State("BACKWARDS"):
-                m.d.sync += [
-                    self.o_xy.eq(Cat(x, y)),
-                    self.o_valid.eq(Cat(edge_ab <= 0, edge_bc <= 0, edge_ca <= 0).all()),
-                    edge_ab.eq(edge_ab - edge_ab_dx),
-                    edge_bc.eq(edge_bc - edge_bc_dx),
-                    edge_ca.eq(edge_ca - edge_ca_dx),
-                    x.eq(x - (1 << 4)),
-                ]
-                with m.If((x - (1 << 4)) <= start_x):
-                    m.d.sync += [
-                        edge_ab.eq(edge_ab + edge_ab_dy - edge_ab_dx),
-                        edge_bc.eq(edge_bc + edge_bc_dy - edge_bc_dx),
-                        edge_ca.eq(edge_ca + edge_ca_dy - edge_ca_dx),
-                    ]
-                    with m.If((y + (1 << 4)) > stop_y):
-                        m.next = "DONE"
-                    with m.Else():
-                        m.d.sync += y.eq(y + (1 << 4))
-                        m.next = "FORWARDS"
 
             with m.State("DONE"):
                 m.d.sync += self.o_done.eq(1)
