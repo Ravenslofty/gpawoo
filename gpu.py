@@ -66,11 +66,11 @@ from amaranth import *
 # i_edge_ca: edge(C, A, P)
 #
 # i_edge_ab_dx: B.y - A.y
-# i_edge_ab_dy: B.x - A.x
+# i_edge_ab_dy: A.x - B.x
 # i_edge_bc_dx: C.y - B.y
-# i_edge_bc_dy: C.x - B.x
+# i_edge_bc_dy: B.x - C.x
 # i_edge_ca_dx: A.y - C.y
-# i_edge_ca_dy: A.x - C.x
+# i_edge_ca_dy: C.x - A.x
 
 
 class TriangleRender(Elaboratable):
