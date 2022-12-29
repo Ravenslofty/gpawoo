@@ -310,7 +310,7 @@ impl Gpu {
         frag.interp_b = frag.interp_b / self.total_area;
         frag.interp_c = frag.interp_c / self.total_area;
 
-        frag.depth = frag.interp_a * self.a_inv_z + frag.interp_b * self.b_inv_z + frag.interp_c * self.c_inv_z;
+        frag.depth = Q24p4::one() / (frag.interp_a * self.a_inv_z + frag.interp_b * self.b_inv_z + frag.interp_c * self.c_inv_z);
         frag.interp_a = frag.interp_a * frag.depth;
         frag.interp_b = frag.interp_b * frag.depth;
         frag.interp_c = frag.interp_c * frag.depth;
@@ -384,6 +384,20 @@ fn blit_triangle(framebuffer: &mut [u8; 512*512*3], a: Vertex, b: Vertex, c: Ver
         drawing: true,
     });
 
+    // this color interpolation is not implemented as it would be in hardware
+    // it is purely so we can see the results of frag.interp_...
+    let a_red = a.red as f32 / (a.z.0 as f32 / 16.0);
+    let a_green = a.green as f32 / (a.z.0 as f32 / 16.0);
+    let a_blue = a.blue as f32 / (a.z.0 as f32 / 16.0);
+
+    let b_red = b.red as f32 / (b.z.0 as f32 / 16.0);
+    let b_green = b.green as f32 / (b.z.0 as f32 / 16.0);
+    let b_blue = b.blue as f32 / (b.z.0 as f32 / 16.0);
+
+    let c_red = c.red as f32 / (c.z.0 as f32 / 16.0);
+    let c_green = c.green as f32 / (c.z.0 as f32 / 16.0);
+    let c_blue = c.blue as f32 / (c.z.0 as f32 / 16.0);
+
     println!("now drawing");
     let mut steps = 0;
     while gpu.drawing {
@@ -393,9 +407,12 @@ fn blit_triangle(framebuffer: &mut [u8; 512*512*3], a: Vertex, b: Vertex, c: Ver
             if frag.valid[pixel] {
                 let x = frag.x[pixel].truncate() as usize;
                 let y = frag.y[pixel].truncate() as usize;
-                framebuffer[512*3*y + 3*x + 0] = a.red;
-                framebuffer[512*3*y + 3*x + 1] = frag.depth.0 as u8 * 15;
-                framebuffer[512*3*y + 3*x + 2] = a.blue;
+                let interp_a = frag.interp_a.0 as f32 / 16.0;
+                let interp_b = frag.interp_b.0 as f32 / 16.0;
+                let interp_c = frag.interp_c.0 as f32 / 16.0;
+                framebuffer[512*3*y + 3*x + 0] = (a_red * interp_a + b_red * interp_b + c_red * interp_c).clamp(0.0, 255.0) as u8;
+                framebuffer[512*3*y + 3*x + 1] = (a_green * interp_a + b_green * interp_b + c_green * interp_c).clamp(0.0, 255.0) as u8;
+                framebuffer[512*3*y + 3*x + 2] = (a_blue * interp_a + b_blue * interp_b + c_blue * interp_c).clamp(0.0, 255.0) as u8;
                 //println!("hi");
             }
         }
@@ -419,17 +436,17 @@ fn main() {
         x: Q12p4(0x1EB6),
         y: Q12p4(0x19B6),
         z: Q12p4::two(),
-        red: 0,
+        red: 255,
         green: 0,
-        blue: 255,
+        blue: 0,
     };
     let c = Vertex {
         x: Q12p4(0x0949),
         y: Q12p4(0x19B6),
         z: Q12p4::one(),
         red: 0,
-        green: 0,
-        blue: 255,
+        green: 255,
+        blue: 0,
     };
     blit_triangle(&mut framebuffer, a, b, c);
 
@@ -437,9 +454,9 @@ fn main() {
         x: Q12p4(0x0949),
         y: Q12p4(0x0449),
         z: Q12p4::one(),
-        red: 255,
+        red: 0,
         green: 0,
-        blue: 0,
+        blue: 255,
     };
     let a = Vertex {
         x: Q12p4(0x1EB6),
@@ -454,7 +471,7 @@ fn main() {
         y: Q12p4(0x0449),
         z: Q12p4::two(),
         red: 255,
-        green: 0,
+        green: 255,
         blue: 0,
     };
     blit_triangle(&mut framebuffer, a, b, c);
