@@ -338,134 +338,126 @@ impl Gpu {
     }
 }
 
+struct Vertex {
+    x: Q12p4,
+    y: Q12p4,
+    z: Q12p4,
+    red: u8,
+    green: u8,
+    blue: u8,
+}
+
+fn blit_triangle(framebuffer: &mut [u8; 512*512*3], a: Vertex, b: Vertex, c: Vertex) {
+    let start_x = a.x.min(b.x).min(c.x);
+    let start_y = a.y.min(b.y).min(c.y);
+    let stop_x = a.x.max(b.x).max(c.x);
+    let stop_y = a.y.max(b.y).max(c.y);
+
+
+    let mut gpu = dbg!(Gpu {
+        a_x: a.x,
+        a_y: a.y,
+        a_inv_z: Q24p4::one() / a.z.into(),
+        b_x: b.x,
+        b_y: b.y,
+        b_inv_z: Q24p4::one() / b.z.into(),
+        c_x: c.x,
+        c_y: c.y,
+        c_inv_z: Q24p4::one() / c.z.into(),
+        start_x,
+        start_y,
+        stop_x,
+        stop_y,
+        edge_ab: Q24p4::edge_function(a.x, a.y, b.x, b.y, start_x + Q12p4::half(), start_y + Q12p4::half()),
+        edge_bc: Q24p4::edge_function(b.x, b.y, c.x, c.y, start_x + Q12p4::half(), start_y + Q12p4::half()),
+        edge_ca: Q24p4::edge_function(c.x, c.y, a.x, a.y, start_x + Q12p4::half(), start_y + Q12p4::half()),
+        total_area: Q24p4::edge_function(a.x, a.y, b.x, b.y, c.x, c.y),
+        edge_ab_dx: b.y - a.y,
+        edge_ab_dy: a.x - b.x,
+        edge_bc_dx: c.y - b.y,
+        edge_bc_dy: b.x - c.x,
+        edge_ca_dx: a.y - c.y,
+        edge_ca_dy: c.x - a.x,
+        x: start_x + Q12p4::half(),
+        y: start_y + Q12p4::half(),
+        x_inc: Q12p4::one(),
+        drawing: true,
+    });
+
+    println!("now drawing");
+    let mut steps = 0;
+    while gpu.drawing {
+        steps += 1;
+        let frag = gpu.step_rasteriser();
+        for pixel in 0..=3 {
+            if frag.valid[pixel] {
+                let x = frag.x[pixel].truncate() as usize;
+                let y = frag.y[pixel].truncate() as usize;
+                framebuffer[512*3*y + 3*x + 0] = a.red;
+                framebuffer[512*3*y + 3*x + 1] = frag.depth.0 as u8 * 15;
+                framebuffer[512*3*y + 3*x + 2] = a.blue;
+                //println!("hi");
+            }
+        }
+    }
+    println!("done, took {} steps", steps);
+}
+
+
 fn main() {
-    let mut framebuffer = vec![255u8; 512*512*3];
+    let mut framebuffer = [255u8; 512*512*3];
 
-    let a_x = Q12p4(0x0949);
-    let a_y = Q12p4(0x0449);
-    let a_z = Q12p4(0x0010); // 1.0
-    let b_x = Q12p4(0x1EB6);
-    let b_y = Q12p4(0x19B6);
-    let b_z = Q12p4(0x0020); // 2.0
-    let c_x = Q12p4(0x0949);
-    let c_y = Q12p4(0x19B6); 
-    let c_z = Q12p4(0x0010); // 1.0
+    let a = Vertex {
+        x: Q12p4(0x0949),
+        y: Q12p4(0x0449),
+        z: Q12p4::one(),
+        red: 0,
+        green: 0,
+        blue: 255,
+    };
+    let b = Vertex {
+        x: Q12p4(0x1EB6),
+        y: Q12p4(0x19B6),
+        z: Q12p4::two(),
+        red: 0,
+        green: 0,
+        blue: 255,
+    };
+    let c = Vertex {
+        x: Q12p4(0x0949),
+        y: Q12p4(0x19B6),
+        z: Q12p4::one(),
+        red: 0,
+        green: 0,
+        blue: 255,
+    };
+    blit_triangle(&mut framebuffer, a, b, c);
 
-    let start_x = a_x.min(b_x).min(c_x);
-    let start_y = a_y.min(b_y).min(c_y);
-    let stop_x = a_x.max(b_x).max(c_x);
-    let stop_y = a_y.max(b_y).max(c_y);
-
-    let mut gpu = dbg!(Gpu {
-        a_x,
-        a_y,
-        a_inv_z: Q24p4::one() / a_z.into(),
-        b_x,
-        b_y,
-        b_inv_z: Q24p4::one() / b_z.into(),
-        c_x,
-        c_y,
-        c_inv_z: Q24p4::one() / c_z.into(),
-        start_x,
-        start_y,
-        stop_x,
-        stop_y,
-        edge_ab: Q24p4::edge_function(a_x, a_y, b_x, b_y, start_x + Q12p4::half(), start_y + Q12p4::half()),
-        edge_bc: Q24p4::edge_function(b_x, b_y, c_x, c_y, start_x + Q12p4::half(), start_y + Q12p4::half()),
-        edge_ca: Q24p4::edge_function(c_x, c_y, a_x, a_y, start_x + Q12p4::half(), start_y + Q12p4::half()),
-        total_area: Q24p4::edge_function(a_x, a_y, b_x, b_y, c_x, c_y),
-        edge_ab_dx: b_y - a_y,
-        edge_ab_dy: a_x - b_x,
-        edge_bc_dx: c_y - b_y,
-        edge_bc_dy: b_x - c_x,
-        edge_ca_dx: a_y - c_y,
-        edge_ca_dy: c_x - a_x,
-        x: start_x + Q12p4::half(),
-        y: start_y + Q12p4::half(),
-        x_inc: Q12p4::one(),
-        drawing: true,
-    });
-
-    println!("now drawing");
-    let mut steps = 0;
-    while gpu.drawing {
-        steps += 1;
-        let frag = gpu.step_rasteriser();
-        for pixel in 0..=3 {
-            if frag.valid[pixel] {
-                let x = frag.x[pixel].truncate() as usize;
-                let y = frag.y[pixel].truncate() as usize;
-                framebuffer[512*3*y + 3*x + 0] = 0;
-                framebuffer[512*3*y + 3*x + 1] = frag.depth.0 as u8 * 15;
-                framebuffer[512*3*y + 3*x + 2] = 255;
-                //println!("hi");
-            }
-        }
-    }
-    println!("done, took {} steps", steps);
-
-    let b_x = Q12p4(0x0949);
-    let b_y = Q12p4(0x0449);
-    let b_z = Q12p4(0x0010); // 1.0
-    let a_x = Q12p4(0x1EB6);
-    let a_y = Q12p4(0x19B6);
-    let a_z = Q12p4(0x0020); // 2.0
-    let c_x = Q12p4(0x1EB6);
-    let c_y = Q12p4(0x0449);
-    let c_z = Q12p4(0x0020); // 2.0
-
-    let start_x = a_x.min(b_x).min(c_x);
-    let start_y = a_y.min(b_y).min(c_y);
-    let stop_x = a_x.max(b_x).max(c_x);
-    let stop_y = a_y.max(b_y).max(c_y);
-
-    let mut gpu = dbg!(Gpu {
-        a_x,
-        a_y,
-        a_inv_z: Q24p4::one() / a_z.into(),
-        b_x,
-        b_y,
-        b_inv_z: Q24p4::one() / b_z.into(),
-        c_x,
-        c_y,
-        c_inv_z: Q24p4::one() / c_z.into(),
-        start_x,
-        start_y,
-        stop_x,
-        stop_y,
-        edge_ab: Q24p4::edge_function(a_x, a_y, b_x, b_y, start_x, start_y),
-        edge_bc: Q24p4::edge_function(b_x, b_y, c_x, c_y, start_x, start_y),
-        edge_ca: Q24p4::edge_function(c_x, c_y, a_x, a_y, start_x, start_y),
-        total_area: Q24p4::edge_function(a_x, a_y, b_x, b_y, c_x, c_y),
-        edge_ab_dx: b_y - a_y,
-        edge_ab_dy: a_x - b_x,
-        edge_bc_dx: c_y - b_y,
-        edge_bc_dy: b_x - c_x,
-        edge_ca_dx: a_y - c_y,
-        edge_ca_dy: c_x - a_x,
-        x: start_x + Q12p4::half(),
-        y: start_y + Q12p4::half(),
-        x_inc: Q12p4::one(),
-        drawing: true,
-    });
-
-    println!("now drawing");
-    let mut steps = 0;
-    while gpu.drawing {
-        steps += 1;
-        let frag = gpu.step_rasteriser();
-        for pixel in 0..=3 {
-            if frag.valid[pixel] {
-                let x = frag.x[pixel].truncate() as usize;
-                let y = frag.y[pixel].truncate() as usize;
-                framebuffer[512*3*y + 3*x + 0] = 255;
-                framebuffer[512*3*y + 3*x + 1] = frag.depth.0 as u8 * 15;
-                framebuffer[512*3*y + 3*x + 2] = 0;
-                //println!("hi");
-            }
-        }
-    }
-    println!("done, took {} steps", steps);
+    let b = Vertex {
+        x: Q12p4(0x0949),
+        y: Q12p4(0x0449),
+        z: Q12p4::one(),
+        red: 255,
+        green: 0,
+        blue: 0,
+    };
+    let a = Vertex {
+        x: Q12p4(0x1EB6),
+        y: Q12p4(0x19B6),
+        z: Q12p4::two(),
+        red: 255,
+        green: 0,
+        blue: 0,
+    };
+    let c = Vertex {
+        x: Q12p4(0x1EB6),
+        y: Q12p4(0x0449),
+        z: Q12p4::two(),
+        red: 255,
+        green: 0,
+        blue: 0,
+    };
+    blit_triangle(&mut framebuffer, a, b, c);
 
     let mut f = std::fs::File::create("triangle.ppm").unwrap();
     writeln!(f, "P6").unwrap();
