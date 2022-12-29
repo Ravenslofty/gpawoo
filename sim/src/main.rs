@@ -188,27 +188,27 @@ impl Display for Q24p4 {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Q16p16(i32);
+struct Q16p16(i16);
 
 impl Q16p16 {
     pub fn one() -> Self {
-        Q16p16(1 << 16)
+        Q16p16(1 << 8)
     }
 
     pub fn div_q24p4(lhs: Q24p4, rhs: Q24p4) -> Q16p16 {
-        Q16p16((lhs.0 as f32 / rhs.0 as f32 * (1 << 16) as f32) as i32)
+        Q16p16((lhs.0 as f32 / rhs.0 as f32 * (1 << 8) as f32) as i16)
     }
 }
 
 impl From<Q24p4> for Q16p16 {
     fn from(val: Q24p4) -> Self {
-        Q16p16(val.0 << 12)
+        Q16p16((val.0 as i16) << 4)
     }
 }
 
 impl From<Q12p4> for Q16p16 {
     fn from(val: Q12p4) -> Self {
-        Q16p16((val.0 as i32) << 12)
+        Q16p16(val.0 << 4)
     }
 }
 
@@ -225,7 +225,7 @@ impl Mul for Q16p16 {
     type Output = Q16p16;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        Q16p16(((self.0 as i64 * rhs.0 as i64) >> 16) as i32)
+        Q16p16(((self.0 as i64 * rhs.0 as i64) >> 8) as i16)
     }
 }
 
@@ -234,7 +234,7 @@ impl Div<Q16p16> for Q16p16 {
     type Output = Q16p16;
 
     fn div(self, rhs: Self) -> Self::Output {
-        Q16p16((self.0 as f32 / rhs.0 as f32 * (1 << 16) as f32) as i32)
+        Q16p16((self.0 as f32 / rhs.0 as f32 * (1 << 8) as f32) as i16)
     }
 }
 
@@ -243,7 +243,7 @@ impl Div<Q24p4> for Q16p16 {
     type Output = Q16p16;
 
     fn div(self, rhs: Q24p4) -> Self::Output {
-        Q16p16((self.0 as f32 / rhs.0 as f32 * 16.0) as i32)
+        Q16p16((self.0 as f32 / rhs.0 as f32 * 16.0) as i16)
     }
 }
 
@@ -252,7 +252,7 @@ impl Div<Q12p4> for Q16p16 {
     type Output = Q16p16;
 
     fn div(self, rhs: Q12p4) -> Self::Output {
-        Q16p16((self.0 as f32 / rhs.0 as f32 * 16.0) as i32)
+        Q16p16((self.0 as f32 / rhs.0 as f32 * 16.0) as i16)
     }
 }
 
@@ -474,9 +474,9 @@ fn blit_triangle(framebuffer: &mut [u8; 512*512*3], a: Vertex, b: Vertex, c: Ver
             if frag.valid[pixel] {
                 let x = frag.x[pixel].truncate() as usize;
                 let y = frag.y[pixel].truncate() as usize;
-                let interp_a = frag.interp_a.0 as f32 / (1 << 16) as f32;
-                let interp_b = frag.interp_b.0 as f32 / (1 << 16) as f32;
-                let interp_c = frag.interp_c.0 as f32 / (1 << 16) as f32;
+                let interp_a = frag.interp_a.0 as f32 / (1 << 8) as f32;
+                let interp_b = frag.interp_b.0 as f32 / (1 << 8) as f32;
+                let interp_c = frag.interp_c.0 as f32 / (1 << 8) as f32;
                 framebuffer[512*3*y + 3*x + 0] = (a_red * interp_a + b_red * interp_b + c_red * interp_c).clamp(0.0, 255.0) as u8;
                 framebuffer[512*3*y + 3*x + 1] = (a_green * interp_a + b_green * interp_b + c_green * interp_c).clamp(0.0, 255.0) as u8;
                 framebuffer[512*3*y + 3*x + 2] = (a_blue * interp_a + b_blue * interp_b + c_blue * interp_c).clamp(0.0, 255.0) as u8;
