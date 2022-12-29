@@ -111,9 +111,9 @@ class TriangleRender(Elaboratable):
         x_inc    = Signal(signed(16), reset=(1 << 4))
 
         valid    = (
-            ((self.i_edge_ab < 0) | ((self.i_edge_ab == 0) & ((self.i_edge_ab_dx > 0) | (self.i_edge_ab_dx == 0) & (self.i_edge_ab_dy < 0)))) &
-            ((self.i_edge_bc < 0) | ((self.i_edge_bc == 0) & ((self.i_edge_bc_dx > 0) | (self.i_edge_bc_dx == 0) & (self.i_edge_bc_dy < 0)))) &
-            ((self.i_edge_ca < 0) | ((self.i_edge_ca == 0) & ((self.i_edge_ca_dx > 0) | (self.i_edge_ca_dx == 0) & (self.i_edge_ca_dy < 0))))
+            ((self.i_edge_ab < 0) | ((self.i_edge_ab == 0) & ((self.i_edge_ab_dy < 0) | (self.i_edge_ab_dy == 0) & (self.i_edge_ab_dx < 0)))) &
+            ((self.i_edge_bc < 0) | ((self.i_edge_bc == 0) & ((self.i_edge_bc_dy < 0) | (self.i_edge_bc_dy == 0) & (self.i_edge_bc_dx < 0)))) &
+            ((self.i_edge_ca < 0) | ((self.i_edge_ca == 0) & ((self.i_edge_ca_dy < 0) | (self.i_edge_ca_dy == 0) & (self.i_edge_ca_dx < 0))))
         )
 
         m.d.sync += [
