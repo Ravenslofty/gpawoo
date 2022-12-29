@@ -187,6 +187,75 @@ impl Display for Q24p4 {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Q16p16(i32);
+
+impl Q16p16 {
+    pub fn one() -> Self {
+        Q16p16(1 << 16)
+    }
+
+    pub fn div_q24p4(lhs: Q24p4, rhs: Q24p4) -> Q16p16 {
+        Q16p16((lhs.0 as f32 / rhs.0 as f32 * (1 << 16) as f32) as i32)
+    }
+}
+
+impl From<Q24p4> for Q16p16 {
+    fn from(val: Q24p4) -> Self {
+        Q16p16(val.0 << 12)
+    }
+}
+
+impl From<Q12p4> for Q16p16 {
+    fn from(val: Q12p4) -> Self {
+        Q16p16((val.0 as i32) << 12)
+    }
+}
+
+impl Add<Q16p16> for Q16p16 {
+    type Output = Q16p16;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Q16p16(self.0 + rhs.0)
+    }
+}
+
+// temporary multiplication implementation for testing, looses precision
+impl Mul for Q16p16 {
+    type Output = Q16p16;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Q16p16(((self.0 as i64 * rhs.0 as i64) >> 16) as i32)
+    }
+}
+
+// temporary division implementation for testing
+impl Div<Q16p16> for Q16p16 {
+    type Output = Q16p16;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Q16p16((self.0 as f32 / rhs.0 as f32 * (1 << 16) as f32) as i32)
+    }
+}
+
+// temporary division implementation for testing
+impl Div<Q24p4> for Q16p16 {
+    type Output = Q16p16;
+
+    fn div(self, rhs: Q24p4) -> Self::Output {
+        Q16p16((self.0 as f32 / rhs.0 as f32 * 16.0) as i32)
+    }
+}
+
+// temporary division implementation for testing
+impl Div<Q12p4> for Q16p16 {
+    type Output = Q16p16;
+
+    fn div(self, rhs: Q12p4) -> Self::Output {
+        Q16p16((self.0 as f32 / rhs.0 as f32 * 16.0) as i32)
+    }
+}
+
 // 2x2 box of pixels:
 // 0 1 -> X
 // 2 3
@@ -197,10 +266,10 @@ struct Fragment {
     x: [Q12p4; 4],
     y: [Q12p4; 4],
     valid: [bool; 4],
-    depth: Q24p4,
-    interp_a: Q24p4,
-    interp_b: Q24p4,
-    interp_c: Q24p4,
+    depth: Q16p16,
+    interp_a: Q16p16,
+    interp_b: Q16p16,
+    interp_c: Q16p16,
 }
 
 impl Fragment {
@@ -209,10 +278,10 @@ impl Fragment {
             x: [Q12p4(0); 4],
             y: [Q12p4(0); 4],
             valid: [false; 4],
-            depth: Q24p4(0),
-            interp_a: Q24p4(0),
-            interp_b: Q24p4(0),
-            interp_c: Q24p4(0),
+            depth: Q16p16(0),
+            interp_a: Q16p16(0),
+            interp_b: Q16p16(0),
+            interp_c: Q16p16(0),
         }
     }
 }
@@ -222,17 +291,16 @@ struct Gpu {
     // i_xy_a:
     a_x: Q12p4,
     a_y: Q12p4,
-    a_inv_z: Q24p4,
+    a_inv_z: Q16p16,
     // i_xy_b:
     b_x: Q12p4,
     b_y: Q12p4,
-    b_inv_z: Q24p4,
+    b_inv_z: Q16p16,
     // i_xy_c:
     c_x: Q12p4,
     c_y: Q12p4,
-    c_inv_z: Q24p4,
+    c_inv_z: Q16p16,
 
-    // i want to precalculate 1 / this, but Q24p4 doesn't have enough precision
     total_area: Q24p4,
 
     // i_start_x:
@@ -302,15 +370,15 @@ impl Gpu {
         frag.valid[2] = ok(self.edge_ab + self.edge_ab_dy, self.edge_bc + self.edge_bc_dy, self.edge_ca + self.edge_ca_dy);
         frag.valid[3] = ok(self.edge_ab + self.edge_ab_dx + self.edge_ab_dy, self.edge_bc + self.edge_bc_dx + self.edge_bc_dy, self.edge_ca + self.edge_ca_dx + self.edge_ca_dy);
 
-        frag.interp_a = self.edge_bc + self.edge_bc_dx * Q12p4::half() + self.edge_bc_dy * Q12p4::half();
-        frag.interp_b = self.edge_ca + self.edge_ca_dx * Q12p4::half() + self.edge_ca_dy * Q12p4::half();
-        frag.interp_c = self.edge_ab + self.edge_ab_dx * Q12p4::half() + self.edge_ab_dy * Q12p4::half();
+        let interp_a = self.edge_bc + self.edge_bc_dx * Q12p4::half() + self.edge_bc_dy * Q12p4::half();
+        let interp_b = self.edge_ca + self.edge_ca_dx * Q12p4::half() + self.edge_ca_dy * Q12p4::half();
+        let interp_c = self.edge_ab + self.edge_ab_dx * Q12p4::half() + self.edge_ab_dy * Q12p4::half();
 
-        frag.interp_a = frag.interp_a / self.total_area;
-        frag.interp_b = frag.interp_b / self.total_area;
-        frag.interp_c = frag.interp_c / self.total_area;
+        frag.interp_a = Q16p16::div_q24p4(interp_a, self.total_area);
+        frag.interp_b = Q16p16::div_q24p4(interp_b, self.total_area);
+        frag.interp_c = Q16p16::div_q24p4(interp_c, self.total_area);
 
-        frag.depth = Q24p4::one() / (frag.interp_a * self.a_inv_z + frag.interp_b * self.b_inv_z + frag.interp_c * self.c_inv_z);
+        frag.depth = Q16p16::one() / (frag.interp_a * self.a_inv_z + frag.interp_b * self.b_inv_z + frag.interp_c * self.c_inv_z);
         frag.interp_a = frag.interp_a * frag.depth;
         frag.interp_b = frag.interp_b * frag.depth;
         frag.interp_c = frag.interp_c * frag.depth;
@@ -353,17 +421,16 @@ fn blit_triangle(framebuffer: &mut [u8; 512*512*3], a: Vertex, b: Vertex, c: Ver
     let stop_x = a.x.max(b.x).max(c.x);
     let stop_y = a.y.max(b.y).max(c.y);
 
-
     let mut gpu = dbg!(Gpu {
         a_x: a.x,
         a_y: a.y,
-        a_inv_z: Q24p4::one() / a.z.into(),
+        a_inv_z: Q16p16::one() / a.z,
         b_x: b.x,
         b_y: b.y,
-        b_inv_z: Q24p4::one() / b.z.into(),
+        b_inv_z: Q16p16::one() / b.z,
         c_x: c.x,
         c_y: c.y,
-        c_inv_z: Q24p4::one() / c.z.into(),
+        c_inv_z: Q16p16::one() / c.z,
         start_x,
         start_y,
         stop_x,
@@ -407,9 +474,9 @@ fn blit_triangle(framebuffer: &mut [u8; 512*512*3], a: Vertex, b: Vertex, c: Ver
             if frag.valid[pixel] {
                 let x = frag.x[pixel].truncate() as usize;
                 let y = frag.y[pixel].truncate() as usize;
-                let interp_a = frag.interp_a.0 as f32 / 16.0;
-                let interp_b = frag.interp_b.0 as f32 / 16.0;
-                let interp_c = frag.interp_c.0 as f32 / 16.0;
+                let interp_a = frag.interp_a.0 as f32 / (1 << 16) as f32;
+                let interp_b = frag.interp_b.0 as f32 / (1 << 16) as f32;
+                let interp_c = frag.interp_c.0 as f32 / (1 << 16) as f32;
                 framebuffer[512*3*y + 3*x + 0] = (a_red * interp_a + b_red * interp_b + c_red * interp_c).clamp(0.0, 255.0) as u8;
                 framebuffer[512*3*y + 3*x + 1] = (a_green * interp_a + b_green * interp_b + c_green * interp_c).clamp(0.0, 255.0) as u8;
                 framebuffer[512*3*y + 3*x + 2] = (a_blue * interp_a + b_blue * interp_b + c_blue * interp_c).clamp(0.0, 255.0) as u8;
