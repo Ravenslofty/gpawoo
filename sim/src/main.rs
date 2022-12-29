@@ -188,71 +188,71 @@ impl Display for Q24p4 {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Q16p16(i16);
+struct Q8p8(i16);
 
-impl Q16p16 {
+impl Q8p8 {
     pub fn one() -> Self {
-        Q16p16(1 << 8)
+        Q8p8(1 << 8)
     }
 
-    pub fn div_q24p4(lhs: Q24p4, rhs: Q24p4) -> Q16p16 {
-        Q16p16((lhs.0 as f32 / rhs.0 as f32 * (1 << 8) as f32) as i16)
+    pub fn div_q24p4(lhs: Q24p4, rhs: Q24p4) -> Q8p8 {
+        Q8p8((lhs.0 as f32 / rhs.0 as f32 * (1 << 8) as f32) as i16)
     }
 }
 
-impl From<Q24p4> for Q16p16 {
+impl From<Q24p4> for Q8p8 {
     fn from(val: Q24p4) -> Self {
-        Q16p16((val.0 as i16) << 4)
+        Q8p8((val.0 as i16) << 4)
     }
 }
 
-impl From<Q12p4> for Q16p16 {
+impl From<Q12p4> for Q8p8 {
     fn from(val: Q12p4) -> Self {
-        Q16p16(val.0 << 4)
+        Q8p8(val.0 << 4)
     }
 }
 
-impl Add<Q16p16> for Q16p16 {
-    type Output = Q16p16;
+impl Add<Q8p8> for Q8p8 {
+    type Output = Q8p8;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Q16p16(self.0 + rhs.0)
+        Q8p8(self.0 + rhs.0)
     }
 }
 
 // temporary multiplication implementation for testing, looses precision
-impl Mul for Q16p16 {
-    type Output = Q16p16;
+impl Mul for Q8p8 {
+    type Output = Q8p8;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        Q16p16(((self.0 as i64 * rhs.0 as i64) >> 8) as i16)
+        Q8p8(((self.0 as i64 * rhs.0 as i64) >> 8) as i16)
     }
 }
 
 // temporary division implementation for testing
-impl Div<Q16p16> for Q16p16 {
-    type Output = Q16p16;
+impl Div<Q8p8> for Q8p8 {
+    type Output = Q8p8;
 
     fn div(self, rhs: Self) -> Self::Output {
-        Q16p16((self.0 as f32 / rhs.0 as f32 * (1 << 8) as f32) as i16)
+        Q8p8((self.0 as f32 / rhs.0 as f32 * (1 << 8) as f32) as i16)
     }
 }
 
 // temporary division implementation for testing
-impl Div<Q24p4> for Q16p16 {
-    type Output = Q16p16;
+impl Div<Q24p4> for Q8p8 {
+    type Output = Q8p8;
 
     fn div(self, rhs: Q24p4) -> Self::Output {
-        Q16p16((self.0 as f32 / rhs.0 as f32 * 16.0) as i16)
+        Q8p8((self.0 as f32 / rhs.0 as f32 * 16.0) as i16)
     }
 }
 
 // temporary division implementation for testing
-impl Div<Q12p4> for Q16p16 {
-    type Output = Q16p16;
+impl Div<Q12p4> for Q8p8 {
+    type Output = Q8p8;
 
     fn div(self, rhs: Q12p4) -> Self::Output {
-        Q16p16((self.0 as f32 / rhs.0 as f32 * 16.0) as i16)
+        Q8p8((self.0 as f32 / rhs.0 as f32 * 16.0) as i16)
     }
 }
 
@@ -266,10 +266,10 @@ struct Fragment {
     x: [Q12p4; 4],
     y: [Q12p4; 4],
     valid: [bool; 4],
-    depth: Q16p16,
-    interp_a: Q16p16,
-    interp_b: Q16p16,
-    interp_c: Q16p16,
+    depth: Q8p8,
+    interp_a: Q8p8,
+    interp_b: Q8p8,
+    interp_c: Q8p8,
 }
 
 impl Fragment {
@@ -278,10 +278,10 @@ impl Fragment {
             x: [Q12p4(0); 4],
             y: [Q12p4(0); 4],
             valid: [false; 4],
-            depth: Q16p16(0),
-            interp_a: Q16p16(0),
-            interp_b: Q16p16(0),
-            interp_c: Q16p16(0),
+            depth: Q8p8(0),
+            interp_a: Q8p8(0),
+            interp_b: Q8p8(0),
+            interp_c: Q8p8(0),
         }
     }
 }
@@ -291,15 +291,15 @@ struct Gpu {
     // i_xy_a:
     a_x: Q12p4,
     a_y: Q12p4,
-    a_inv_z: Q16p16,
+    a_inv_z: Q8p8,
     // i_xy_b:
     b_x: Q12p4,
     b_y: Q12p4,
-    b_inv_z: Q16p16,
+    b_inv_z: Q8p8,
     // i_xy_c:
     c_x: Q12p4,
     c_y: Q12p4,
-    c_inv_z: Q16p16,
+    c_inv_z: Q8p8,
 
     total_area: Q24p4,
 
@@ -374,11 +374,11 @@ impl Gpu {
         let interp_b = self.edge_ca + self.edge_ca_dx * Q12p4::half() + self.edge_ca_dy * Q12p4::half();
         let interp_c = self.edge_ab + self.edge_ab_dx * Q12p4::half() + self.edge_ab_dy * Q12p4::half();
 
-        frag.interp_a = Q16p16::div_q24p4(interp_a, self.total_area);
-        frag.interp_b = Q16p16::div_q24p4(interp_b, self.total_area);
-        frag.interp_c = Q16p16::div_q24p4(interp_c, self.total_area);
+        frag.interp_a = Q8p8::div_q24p4(interp_a, self.total_area);
+        frag.interp_b = Q8p8::div_q24p4(interp_b, self.total_area);
+        frag.interp_c = Q8p8::div_q24p4(interp_c, self.total_area);
 
-        frag.depth = Q16p16::one() / (frag.interp_a * self.a_inv_z + frag.interp_b * self.b_inv_z + frag.interp_c * self.c_inv_z);
+        frag.depth = Q8p8::one() / (frag.interp_a * self.a_inv_z + frag.interp_b * self.b_inv_z + frag.interp_c * self.c_inv_z);
         frag.interp_a = frag.interp_a * frag.depth;
         frag.interp_b = frag.interp_b * frag.depth;
         frag.interp_c = frag.interp_c * frag.depth;
@@ -424,13 +424,13 @@ fn blit_triangle(framebuffer: &mut [u8; 512*512*3], a: Vertex, b: Vertex, c: Ver
     let mut gpu = dbg!(Gpu {
         a_x: a.x,
         a_y: a.y,
-        a_inv_z: Q16p16::one() / a.z,
+        a_inv_z: Q8p8::one() / a.z,
         b_x: b.x,
         b_y: b.y,
-        b_inv_z: Q16p16::one() / b.z,
+        b_inv_z: Q8p8::one() / b.z,
         c_x: c.x,
         c_y: c.y,
-        c_inv_z: Q16p16::one() / c.z,
+        c_inv_z: Q8p8::one() / c.z,
         start_x,
         start_y,
         stop_x,
