@@ -399,7 +399,7 @@ impl Gpu {
             self.edge_ca += self.edge_ca_dx << 1;
         }
 
-        self.drawing =BC is a top edge because B.x < C.x and B.y == C.y, so is drawn. self.y <= self.stop_y;
+        self.drawing = self.y <= self.stop_y;
 
         frag
     }
