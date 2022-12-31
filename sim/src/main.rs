@@ -114,7 +114,9 @@ impl Q24p4 {
     }
 
     pub fn edge_function(ax: Q12p4, ay: Q12p4, bx: Q12p4, by: Q12p4, px: Q12p4, py: Q12p4) -> Self {
-        (px - ax) * (by - ay) - (py - ay) * (bx - ax)
+        let mut x = (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+        x.0 -= (ay < by || (ay == by && bx < ax)) as i32;
+        x
     }
 }
 
@@ -345,10 +347,7 @@ impl Gpu {
         //println!("AB: {}, BC: {}, CA: {}", self.edge_ab, self.edge_bc, self.edge_ca);
 
         let ok = |edge_ab: Q24p4, edge_bc: Q24p4, edge_ca: Q24p4| {
-            let ab_ok = edge_ab.is_negative() || (edge_ab.is_zero() && (self.edge_ab_dy.is_negative() || (self.edge_ab_dy.is_zero() && self.edge_ab_dx.is_negative())));
-            let bc_ok = edge_bc.is_negative() || (edge_bc.is_zero() && (self.edge_bc_dy.is_negative() || (self.edge_bc_dy.is_zero() && self.edge_bc_dx.is_negative())));
-            let ca_ok = edge_ca.is_negative() || (edge_ca.is_zero() && (self.edge_ca_dy.is_negative() || (self.edge_ca_dy.is_zero() && self.edge_ca_dx.is_negative())));
-            ab_ok && bc_ok && ca_ok
+            edge_ab.is_negative() && edge_bc.is_negative() && edge_ca.is_negative()
         };
 
         if !self.drawing {
@@ -400,7 +399,7 @@ impl Gpu {
             self.edge_ca += self.edge_ca_dx << 1;
         }
 
-        self.drawing = self.y <= self.stop_y;
+        self.drawing =BC is a top edge because B.x < C.x and B.y == C.y, so is drawn. self.y <= self.stop_y;
 
         frag
     }

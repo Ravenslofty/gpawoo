@@ -43,9 +43,19 @@ from amaranth import *
 # A-----B   ABC has counterclockwise winding, sign inside triangle is negative
 #
 # triangle winding can be flipped by swapping two vertices. as such,
-# TriangleRender assumes a counter-clockwise winding with negativeve internal
+# TriangleRender assumes a counter-clockwise winding with negative internal
 # sign to simplify implementation and allow for back-face culling. 
 # counter-clockwise winding is the default for both DirectX and OpenGL.
+#
+# C-----B   AB is a right edge because B.y > A.y, so is not drawn.
+#  \   /    BC is a top edge because B.x < C.x and B.y == C.y, so is drawn.
+#   \ /     CA is a left edge because A.y < C.y, so is drawn.
+#    A
+#
+# to avoid multiple pixels being drawn on the edge of two adjacent pixels,
+# the Pineda formula is adjusted slightly to make the "top" and "left" edges
+# of a triangle count as inside the triangle, but "bottom" and "right" edges
+# count as outside the triangle.
 #
 # with the algorithm explanation out of the way, the necessary setup math:
 # (all coordinates are in Q12.4 fixed-point format unless otherwise specified.)
@@ -60,10 +70,11 @@ from amaranth import *
 # i_stop_y:  max(A.y, B.y, C.y)
 #
 # let P be the point of (i_start_x, i_start_y) for setup calculation:
+# let cast(X) be 0.0625 if X is true, and 0.0 if X is false.
 #
-# i_edge_ab: edge(A, B, P)
-# i_edge_bc: edge(B, C, P)
-# i_edge_ca: edge(C, A, P)
+# i_edge_ab: edge(A, B, P) - cast(A.y < B.y or (A.y == B.y && B.x < A.x))
+# i_edge_bc: edge(B, C, P) - cast(B.y < C.y or (B.y == C.y && C.x < B.x))
+# i_edge_ca: edge(C, A, P) - cast(C.y < A.y or (C.y == A.y && A.x < C.x))
 #
 # i_edge_ab_dx: B.y - A.y
 # i_edge_ab_dy: A.x - B.x
@@ -111,9 +122,9 @@ class TriangleRender(Elaboratable):
         x_inc    = Signal(signed(16), reset=(1 << 4))
 
         m.d.sync += self.o_valid.eq(
-            ((self.i_edge_ab < 0) | ((self.i_edge_ab == 0) & ((self.i_edge_ab_dy < 0) | (self.i_edge_ab_dy == 0) & (self.i_edge_ab_dx < 0)))) &
-            ((self.i_edge_bc < 0) | ((self.i_edge_bc == 0) & ((self.i_edge_bc_dy < 0) | (self.i_edge_bc_dy == 0) & (self.i_edge_bc_dx < 0)))) &
-            ((self.i_edge_ca < 0) | ((self.i_edge_ca == 0) & ((self.i_edge_ca_dy < 0) | (self.i_edge_ca_dy == 0) & (self.i_edge_ca_dx < 0))))
+            (self.i_edge_ab < 0) &
+            (self.i_edge_bc < 0) &
+            (self.i_edge_ca < 0)
         )
 
         with m.If(self.i_run):
@@ -160,7 +171,9 @@ if __name__ == "__main__":
 
     def test():
         def edge(ax, ay, bx, by, cx, cy): # ax, ay, bx, by, cx, cy all Q12.4
-            return (((cx - ax) * (by - ay)) - ((cy - ay) * (bx - ax))) >> 4 # Q24.4 
+            x = (((cx - ax) * (by - ay)) - ((cy - ay) * (bx - ax))) >> 4 # Q24.4
+            x -= int((ax < bx or (ax == bx and by < ay)))
+            return x
 
         a_x, a_y = 0x0949, 0x0449
         b_x, b_y = 0x1EB6, 0x19B6
