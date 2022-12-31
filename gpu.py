@@ -95,9 +95,10 @@ class TriangleRender(Elaboratable):
         self.i_edge_ca_dx = Signal(signed(16))
         self.i_edge_ca_dy = Signal(signed(16))
 
+        self.i_run   = Signal()
+
         self.o_xy    = Signal(32)
         self.o_valid = Signal()
-        self.o_done  = Signal()
 
     def elaborate(self, platform):
         m = Module()
@@ -106,57 +107,34 @@ class TriangleRender(Elaboratable):
         a_x, a_y = self.i_xy_a[:16], self.i_xy_a[16:]
         b_x, b_y = self.i_xy_b[:16], self.i_xy_b[16:]
         c_x, c_y = self.i_xy_c[:16], self.i_xy_c[16:]
-        x        = Signal(16)
-        y        = Signal(16)
+        x, y     = self.o_xy[:16], self.o_xy[16:]
         x_inc    = Signal(signed(16), reset=(1 << 4))
 
-        valid    = (
+        m.d.sync += self.o_valid.eq(
             ((self.i_edge_ab < 0) | ((self.i_edge_ab == 0) & ((self.i_edge_ab_dy < 0) | (self.i_edge_ab_dy == 0) & (self.i_edge_ab_dx < 0)))) &
             ((self.i_edge_bc < 0) | ((self.i_edge_bc == 0) & ((self.i_edge_bc_dy < 0) | (self.i_edge_bc_dy == 0) & (self.i_edge_bc_dx < 0)))) &
             ((self.i_edge_ca < 0) | ((self.i_edge_ca == 0) & ((self.i_edge_ca_dy < 0) | (self.i_edge_ca_dy == 0) & (self.i_edge_ca_dx < 0))))
         )
 
-        m.d.sync += [
-            self.o_xy.eq(Cat(x, y)),
-            self.o_valid.eq(valid),
-        ]
-
-        with m.FSM():
-            with m.State("WAIT1"):
-                m.next = "WAIT2"
-            with m.State("WAIT2"):
+        with m.If(self.i_run):
+            m.d.sync += [
+                self.i_edge_ab.eq(self.i_edge_ab + self.i_edge_ab_dx),
+                self.i_edge_bc.eq(self.i_edge_bc + self.i_edge_bc_dx),
+                self.i_edge_ca.eq(self.i_edge_ca + self.i_edge_ca_dx),
+                x.eq(x + x_inc),
+            ]
+            with m.If(((x_inc > 0) & ((x + x_inc) > self.i_stop_x)) | ((x_inc < 0) & ((x + x_inc) <= self.i_start_x))):
                 m.d.sync += [
-                    x.eq(self.i_start_x + (1 << 3)),
-                    y.eq(self.i_start_y + (1 << 3)),
+                    self.i_edge_ab.eq(self.i_edge_ab + self.i_edge_ab_dy + self.i_edge_ab_dx),
+                    self.i_edge_bc.eq(self.i_edge_bc + self.i_edge_bc_dy + self.i_edge_bc_dx),
+                    self.i_edge_ca.eq(self.i_edge_ca + self.i_edge_ca_dy + self.i_edge_ca_dx),
+                    self.i_edge_ab_dx.eq(-self.i_edge_ab_dx),
+                    self.i_edge_bc_dx.eq(-self.i_edge_bc_dx),
+                    self.i_edge_ca_dx.eq(-self.i_edge_ca_dx),
+                    x_inc.eq(-x_inc),
+                    y.eq(y + (1 << 4)),
+                    self.i_run.eq((y + (1 << 4)) <= self.i_stop_y),
                 ]
-                m.next = "SETUP"
-                
-            with m.State("SETUP"):
-                m.next = "ITERATE"
-
-            with m.State("ITERATE"):
-                m.d.sync += [
-                    self.i_edge_ab.eq(self.i_edge_ab + self.i_edge_ab_dx),
-                    self.i_edge_bc.eq(self.i_edge_bc + self.i_edge_bc_dx),
-                    self.i_edge_ca.eq(self.i_edge_ca + self.i_edge_ca_dx),
-                    x.eq(x + x_inc),
-                ]
-                with m.If(((x_inc > 0) & ((x + x_inc) > self.i_stop_x)) | ((x_inc < 0) & ((x + x_inc) <= self.i_start_x))):
-                    m.d.sync += [
-                        self.i_edge_ab.eq(self.i_edge_ab + self.i_edge_ab_dy + self.i_edge_ab_dx),
-                        self.i_edge_bc.eq(self.i_edge_bc + self.i_edge_bc_dy + self.i_edge_bc_dx),
-                        self.i_edge_ca.eq(self.i_edge_ca + self.i_edge_ca_dy + self.i_edge_ca_dx),
-                        self.i_edge_ab_dx.eq(-self.i_edge_ab_dx),
-                        self.i_edge_bc_dx.eq(-self.i_edge_bc_dx),
-                        self.i_edge_ca_dx.eq(-self.i_edge_ca_dx),
-                        x_inc.eq(-x_inc),
-                        y.eq(y + (1 << 4)),
-                    ]
-                    with m.If((y + (1 << 4)) > self.i_stop_y):
-                        m.next = "DONE"
-
-            with m.State("DONE"):
-                m.d.sync += self.o_done.eq(1)
 
         return m
 
@@ -170,7 +148,7 @@ if __name__ == "__main__":
         tr.i_edge_ab_dx, tr.i_edge_ab_dy,
         tr.i_edge_bc_dx, tr.i_edge_bc_dy,
         tr.i_edge_ca_dx, tr.i_edge_ca_dy,
-        tr.o_xy, tr.o_valid, tr.o_done
+        tr.o_xy, tr.o_valid, tr.i_run
     ]
 
     from amaranth.back import rtlil
@@ -213,10 +191,13 @@ if __name__ == "__main__":
         yield tr.i_edge_ca_dx.eq(a_y - c_y)
         yield tr.i_edge_ca_dy.eq(c_x - a_x)
 
+        yield tr.i_run.eq(1)
+        yield tr.o_xy.eq(Cat(C(start_x + (1 << 3), 16), C(start_y + (1 << 3))))
+
         yield
         cycles = 1
 
-        while not (yield tr.o_done):
+        while (yield tr.i_run):
             yield
             cycles += 1
             if (yield tr.o_valid):

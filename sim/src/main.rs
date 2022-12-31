@@ -489,7 +489,7 @@ fn blit_triangle(framebuffer: &mut [u8; 512*512*3], a: Vertex, b: Vertex, c: Ver
 
 
 fn main() {
-    let mut framebuffer = [255u8; 512*512*3];
+    let mut framebuffer = [0u8; 512*512*3];
 
     let a = Vertex {
         x: Q12p4(0x0949),
