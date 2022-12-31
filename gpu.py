@@ -64,9 +64,9 @@ from amaranth import *
 # i_xy_b: (B.y << 16) | B.x
 # i_xy_c: (C.y << 16) | C.x
 #
-# i_start_x: min(A.x, B.x, C.x)
+# i_start_x: min(A.x, B.x, C.x) + 1.0
 # i_start_y: min(A.y, B.y, C.y)
-# i_stop_x:  max(A.x, B.x, C.x)
+# i_stop_x:  max(A.x, B.x, C.x) - 1.0
 # i_stop_y:  max(A.y, B.y, C.y)
 #
 # let P be the point of (i_start_x, i_start_y) for setup calculation:
@@ -82,6 +82,9 @@ from amaranth import *
 # i_edge_bc_dy: B.x - C.x
 # i_edge_ca_dx: A.y - C.y
 # i_edge_ca_dy: C.x - A.x
+#
+# o_xy: ((min(A.y, B.y, C.y) + 0.5) << 16) | (min(A.x, B.x, C.x) + 0.5)
+# i_run: 1
 
 
 class TriangleRender(Elaboratable):
@@ -99,11 +102,14 @@ class TriangleRender(Elaboratable):
         self.i_edge_bc = Signal(signed(32))
         self.i_edge_ca = Signal(signed(32))
 
-        self.i_edge_ab_dx = Signal(signed(16))
+        self.i_edge_ab_pdx = Signal(signed(16))
+        self.i_edge_ab_mdx = Signal(signed(16))
         self.i_edge_ab_dy = Signal(signed(16))
-        self.i_edge_bc_dx = Signal(signed(16))
+        self.i_edge_bc_pdx = Signal(signed(16))
+        self.i_edge_bc_mdx = Signal(signed(16))
         self.i_edge_bc_dy = Signal(signed(16))
-        self.i_edge_ca_dx = Signal(signed(16))
+        self.i_edge_ca_pdx = Signal(signed(16))
+        self.i_edge_ca_mdx = Signal(signed(16))
         self.i_edge_ca_dy = Signal(signed(16))
 
         self.i_run   = Signal()
@@ -119,30 +125,27 @@ class TriangleRender(Elaboratable):
         b_x, b_y = self.i_xy_b[:16], self.i_xy_b[16:]
         c_x, c_y = self.i_xy_c[:16], self.i_xy_c[16:]
         x, y     = self.o_xy[:16], self.o_xy[16:]
-        x_inc    = Signal(signed(16), reset=(1 << 4))
+        x_pinc   = Signal(signed(16), reset=(1 << 4))
+        x_minc   = Signal(signed(16), reset=-(1 << 4))
 
-        m.d.sync += self.o_valid.eq(
-            (self.i_edge_ab < 0) &
-            (self.i_edge_bc < 0) &
-            (self.i_edge_ca < 0)
-        )
+        m.d.sync += self.o_valid.eq((self.i_edge_ab < 0) & (self.i_edge_bc < 0) & (self.i_edge_ca < 0))
 
         with m.If(self.i_run):
             m.d.sync += [
-                self.i_edge_ab.eq(self.i_edge_ab + self.i_edge_ab_dx),
-                self.i_edge_bc.eq(self.i_edge_bc + self.i_edge_bc_dx),
-                self.i_edge_ca.eq(self.i_edge_ca + self.i_edge_ca_dx),
-                x.eq(x + x_inc),
+                self.i_edge_ab.eq(self.i_edge_ab + self.i_edge_ab_pdx),
+                self.i_edge_bc.eq(self.i_edge_bc + self.i_edge_bc_pdx),
+                self.i_edge_ca.eq(self.i_edge_ca + self.i_edge_ca_pdx),
+                x.eq(x + x_pinc),
             ]
-            with m.If(((x_inc > 0) & ((x + x_inc) > self.i_stop_x)) | ((x_inc < 0) & ((x + x_inc) <= self.i_start_x))):
+            with m.If(((x_pinc > 0) & (x > self.i_stop_x)) | ((x_pinc < 0) & (x <= self.i_start_x))):
                 m.d.sync += [
-                    self.i_edge_ab.eq(self.i_edge_ab + self.i_edge_ab_dy + self.i_edge_ab_dx),
-                    self.i_edge_bc.eq(self.i_edge_bc + self.i_edge_bc_dy + self.i_edge_bc_dx),
-                    self.i_edge_ca.eq(self.i_edge_ca + self.i_edge_ca_dy + self.i_edge_ca_dx),
-                    self.i_edge_ab_dx.eq(-self.i_edge_ab_dx),
-                    self.i_edge_bc_dx.eq(-self.i_edge_bc_dx),
-                    self.i_edge_ca_dx.eq(-self.i_edge_ca_dx),
-                    x_inc.eq(-x_inc),
+                    self.i_edge_ab.eq(self.i_edge_ab + self.i_edge_ab_dy + self.i_edge_ab_pdx),
+                    self.i_edge_bc.eq(self.i_edge_bc + self.i_edge_bc_dy + self.i_edge_bc_pdx),
+                    self.i_edge_ca.eq(self.i_edge_ca + self.i_edge_ca_dy + self.i_edge_ca_pdx),
+                    Cat(self.i_edge_ab_pdx, self.i_edge_ab_mdx).eq(Cat(self.i_edge_ab_mdx, self.i_edge_ab_pdx)),
+                    Cat(self.i_edge_bc_pdx, self.i_edge_bc_mdx).eq(Cat(self.i_edge_bc_mdx, self.i_edge_bc_pdx)),
+                    Cat(self.i_edge_ca_pdx, self.i_edge_ca_mdx).eq(Cat(self.i_edge_ca_mdx, self.i_edge_ca_pdx)),
+                    Cat(x_pinc, x_minc).eq(Cat(x_minc, x_pinc)),
                     y.eq(y + (1 << 4)),
                     self.i_run.eq((y + (1 << 4)) <= self.i_stop_y),
                 ]
@@ -156,9 +159,9 @@ if __name__ == "__main__":
         tr.i_xy_a, tr.i_xy_b, tr.i_xy_c,
         tr.i_start_x, tr.i_start_y, tr.i_stop_x, tr.i_stop_y,
         tr.i_edge_ab, tr.i_edge_bc, tr.i_edge_ca,
-        tr.i_edge_ab_dx, tr.i_edge_ab_dy,
-        tr.i_edge_bc_dx, tr.i_edge_bc_dy,
-        tr.i_edge_ca_dx, tr.i_edge_ca_dy,
+        tr.i_edge_ab_pdx, tr.i_edge_ab_mdx, tr.i_edge_ab_dy,
+        tr.i_edge_bc_pdx, tr.i_edge_ab_mdx, tr.i_edge_bc_dy,
+        tr.i_edge_ca_pdx, tr.i_edge_ca_mdx, tr.i_edge_ca_dy,
         tr.o_xy, tr.o_valid, tr.i_run
     ]
 
@@ -188,20 +191,23 @@ if __name__ == "__main__":
         yield tr.i_xy_a.eq(Cat(C(a_x, 16), C(a_y, 16)))
         yield tr.i_xy_c.eq(Cat(C(c_x, 16), C(c_y, 16)))
 
-        yield tr.i_start_x.eq(start_x)
+        yield tr.i_start_x.eq(start_x + (1 << 4))
         yield tr.i_start_y.eq(start_y)
-        yield tr.i_stop_x.eq(stop_x)
+        yield tr.i_stop_x.eq(stop_x - (1 << 4))
         yield tr.i_stop_y.eq(stop_y)
 
         yield tr.i_edge_ab.eq(edge(a_x, a_y, b_x, b_y, start_x, start_y))
         yield tr.i_edge_bc.eq(edge(b_x, b_y, c_x, c_y, start_x, start_y))
         yield tr.i_edge_ca.eq(edge(c_x, c_y, a_x, a_y, start_x, start_y))
         
-        yield tr.i_edge_ab_dx.eq(b_y - a_y)
+        yield tr.i_edge_ab_pdx.eq(b_y - a_y)
+        yield tr.i_edge_ab_mdx.eq(a_y - b_y)
         yield tr.i_edge_ab_dy.eq(a_x - b_x)
-        yield tr.i_edge_bc_dx.eq(c_y - b_y)
+        yield tr.i_edge_bc_pdx.eq(c_y - b_y)
+        yield tr.i_edge_bc_mdx.eq(b_y - c_y)
         yield tr.i_edge_bc_dy.eq(b_x - c_x)
-        yield tr.i_edge_ca_dx.eq(a_y - c_y)
+        yield tr.i_edge_ca_pdx.eq(a_y - c_y)
+        yield tr.i_edge_ca_mdx.eq(c_y - a_y)
         yield tr.i_edge_ca_dy.eq(c_x - a_x)
 
         yield tr.i_run.eq(1)
