@@ -128,7 +128,7 @@ class TriangleRender(Elaboratable):
         x_pinc   = Signal(signed(16), reset=(1 << 4))
         x_minc   = Signal(signed(16), reset=-(1 << 4))
 
-        m.d.sync += self.o_valid.eq((self.i_edge_ab < 0) & (self.i_edge_bc < 0) & (self.i_edge_ca < 0))
+        m.d.comb += self.o_valid.eq((self.i_edge_ab < 0) & (self.i_edge_bc < 0) & (self.i_edge_ca < 0))
 
         with m.If(self.i_run):
             m.d.sync += [
@@ -183,7 +183,7 @@ if __name__ == "__main__":
         c_x, c_y = 0x0949, 0x19B6
 
         start_x = min(a_x, b_x, c_x)
-        start_y = min(a_y, b_y, c_y)
+        start_y = min(a_y, b_y, c_y) - (1 << 4)
         stop_x  = max(a_x, b_x, c_x)
         stop_y  = max(a_y, b_y, c_y)
 
@@ -216,16 +216,26 @@ if __name__ == "__main__":
         yield
         cycles = 1
 
+        canvas = [[0 for _ in range(512)] for _ in range(512)]
+
         while (yield tr.i_run):
             yield
             cycles += 1
             if (yield tr.o_valid):
                 xy = (yield tr.o_xy)
-                x = (xy & 0xFFFF) / 16.0
-                y = (xy >> 16)    / 16.0
-                print((x, y))
+                my_x = (xy & 0xFFFF) >> 4
+                my_y = (xy >> 16) >> 4
+                canvas[my_y][my_x] = 1
         
         print("Took {} cycles".format(cycles))
+
+        with open("triangle.ppm", "w") as f:
+            f.write("P1\n")
+            f.write("512 512\n")
+            for y in range(0, 512):
+                for x in range(0, 512):
+                    f.write("{} ".format(canvas[y][x]))
+                f.write("\n")
 
     sim = Simulator(tr)
     sim.add_clock(1e-9)
