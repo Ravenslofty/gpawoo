@@ -178,10 +178,13 @@ class FragmentInTriangleTest(Elaboratable):
         self.i_tri_xy_a   = Signal(32)
         self.i_tri_xy_b   = Signal(32)
         self.i_tri_xy_c   = Signal(32)
+        self.i_tri_wz_a   = Signal(32)
+        self.i_tri_wz_b   = Signal(32)
+        self.i_tri_wz_c   = Signal(32)
         self.i_tri_rgba_a = Signal(32)
         self.i_tri_rgba_b = Signal(32)
         self.i_tri_rgba_c = Signal(32)
-        self.i_point      = Signal(32)
+        self.i_pnt_xy     = Signal(32)
         self.i_valid      = Signal()
 
         self.i_edge_ab   = Signal(signed(32))
@@ -192,10 +195,13 @@ class FragmentInTriangleTest(Elaboratable):
         self.o_tri_xy_a   = Signal(32)
         self.o_tri_xy_b   = Signal(32)
         self.o_tri_xy_c   = Signal(32)
+        self.o_tri_wz_a   = Signal(32)
+        self.o_tri_wz_b   = Signal(32)
+        self.o_tri_wz_c   = Signal(32)
         self.o_tri_rgba_a = Signal(32)
         self.o_tri_rgba_b = Signal(32)
         self.o_tri_rgba_c = Signal(32)
-        self.o_point      = Signal(32)
+        self.o_pnt_xy     = Signal(32)
         self.o_valid      = Signal()
 
         self.o_edge_ab   = Signal(signed(32))
@@ -212,10 +218,13 @@ class FragmentInTriangleTest(Elaboratable):
             self.o_tri_xy_a.eq(self.i_tri_xy_a),
             self.o_tri_xy_b.eq(self.i_tri_xy_b),
             self.o_tri_xy_c.eq(self.i_tri_xy_c),
+            self.o_tri_wz_a.eq(self.i_tri_wz_a),
+            self.o_tri_wz_b.eq(self.i_tri_wz_b),
+            self.o_tri_wz_c.eq(self.i_tri_wz_c),
             self.o_tri_rgba_a.eq(self.i_tri_rgba_a),
             self.o_tri_rgba_b.eq(self.i_tri_rgba_b),
             self.o_tri_rgba_c.eq(self.i_tri_rgba_c),
-            self.o_point.eq(self.i_point),
+            self.o_pnt_xy.eq(self.i_pnt_xy),
             self.o_edge_ab.eq(self.i_edge_ab),
             self.o_edge_bc.eq(self.i_edge_bc),
             self.o_edge_ca.eq(self.i_edge_ca),
@@ -225,6 +234,71 @@ class FragmentInTriangleTest(Elaboratable):
         return m
 
 
+class FragmentZTransform(Elaboratable):
+    def __init__(self):
+        self.i_tri_xy_a   = Signal(32)
+        self.i_tri_xy_b   = Signal(32)
+        self.i_tri_xy_c   = Signal(32)
+        self.i_tri_rgba_a = Signal(32)
+        self.i_tri_rgba_b = Signal(32)
+        self.i_tri_rgba_c = Signal(32)
+        self.i_pnt_xy     = Signal(32)
+        self.i_pnt_wz     = Signal(32)
+        self.i_valid      = Signal()
+
+        self.i_edge_ab   = Signal(signed(32))
+        self.i_edge_bc   = Signal(signed(32))
+        self.i_edge_ca   = Signal(signed(32))
+        self.i_tri_area  = Signal(signed(32))
+
+        self.o_tri_xy_a   = Signal(32)
+        self.o_tri_xy_b   = Signal(32)
+        self.o_tri_xy_c   = Signal(32)
+        self.o_tri_rgba_a = Signal(32)
+        self.o_tri_rgba_b = Signal(32)
+        self.o_tri_rgba_c = Signal(32)
+        self.o_pnt_xy     = Signal(32)
+        self.o_pnt_z      = Signal(32)
+        self.o_valid      = Signal()
+
+        self.o_edge_ab   = Signal(signed(32))
+        self.o_edge_bc   = Signal(signed(32))
+        self.o_edge_ca   = Signal(signed(32))
+        self.o_tri_area  = Signal(signed(32))        
+
+    def elaborate(self, _):
+        m = Module()
+
+        # Division is misery.
+        #
+        # See: https://en.wikipedia.org/wiki/Division_algorithm#Non-restoring_division
+        remainder = [Signal(64) for _ in range(33)]
+        denominator = [Signal(64) for _ in range(33)]
+        quotient = [Signal(32) for _ in range(33)]
+
+        m.d.sync += [
+            remainder[32].eq(1 << 31), # 1.0 as numerator
+            denominator[32].eq(self.i_pnt_wz << 32),
+            quotient[32].eq(0)
+        ]
+
+        for i in range(32, 0, -1):
+            non_negative = remainder[i] >= 0
+            with m.If(non_negative):
+                m.d.sync += [
+                    quotient[i-1].eq(quotient[i].shift_left(1) | non_negative),
+                    remainder[i-1].eq(remainder[i].shift_left(1) - denominator[i]),
+                ]
+            with m.Else():
+                m.d.sync += [
+                    quotient[i-1].eq(quotient[i].shift_left(1) | non_negative),
+                    remainder[i-1].eq(remainder[i].shift_left(1) + denominator[i]),
+                ]
+            m.d.sync += denominator[i-1].eq(denominator[i])
+
+        m.d.sync += self.o_pnt_z.eq(quotient[0] - ~quotient[0])
+
+        return m
 
 
 if __name__ == "__main__":
